@@ -149,3 +149,202 @@ def run_quality_rules(df: pd.DataFrame, configuration: dict[str, Any]) -> list[C
         results.append(check_duplicates(df, dataset_rules))
 
     return results
+
+def validate_rule_configuration(
+    rules_json: str,
+    default_primary_key: str,
+) -> str:
+    """
+    Parse, validate, normalize, and return project rule configuration JSON.
+
+    This is intentionally independent of FastAPI so it can be reused by
+    routes, tests, APIs, or future import workflows.
+    """
+    import json
+
+    parsed_rules = json.loads(rules_json)
+
+    if not isinstance(parsed_rules, dict):
+        raise ValueError("Rules JSON must contain a JSON object.")
+
+    columns = parsed_rules.get("columns")
+
+    if not isinstance(columns, dict):
+        raise ValueError("Rules JSON must contain a 'columns' object.")
+
+    dataset = parsed_rules.get("dataset", {})
+
+    if not isinstance(dataset, dict):
+        raise ValueError("Rules JSON 'dataset' must be an object.")
+
+    allowed_types = {
+        "string",
+        "integer",
+        "decimal",
+        "float",
+        "number",
+        "email",
+        "date",
+    }
+
+    allowed_severities = {
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL",
+    }
+
+    def validate_numeric_value(
+        value: Any,
+        field_name: str,
+        column_name: str,
+    ) -> None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(
+                f"{field_name} for column '{column_name}' must be numeric."
+            )
+
+    primary_key = dataset.get("primary_key", default_primary_key)
+
+    if isinstance(primary_key, str):
+        primary_key = primary_key.strip()
+
+        if not primary_key:
+            raise ValueError("Dataset primary_key cannot be empty.")
+
+    elif isinstance(primary_key, list):
+        if not primary_key:
+            raise ValueError("Dataset primary_key cannot be empty.")
+
+        cleaned_primary_keys = []
+
+        for key in primary_key:
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError(
+                    "Every dataset primary_key value must be a non-empty string."
+                )
+
+            cleaned_primary_keys.append(key.strip())
+
+        if len(cleaned_primary_keys) != len(set(cleaned_primary_keys)):
+            raise ValueError(
+                "Dataset primary_key contains duplicate columns."
+            )
+
+        primary_key = cleaned_primary_keys
+
+    else:
+        raise ValueError(
+            "Dataset primary_key must be a string or a list of strings."
+        )
+
+    if "check_duplicate_rows" in dataset:
+        if not isinstance(dataset["check_duplicate_rows"], bool):
+            raise ValueError(
+                "Dataset check_duplicate_rows must be true or false."
+            )
+
+    for column_name, rule in columns.items():
+
+        if not isinstance(column_name, str) or not column_name.strip():
+            raise ValueError(
+                "Every column rule must have a non-empty column name."
+            )
+
+        if not isinstance(rule, dict):
+            raise ValueError(
+                f"Rule for column '{column_name}' must be an object."
+            )
+
+        for boolean_field in ("required", "unique"):
+            if boolean_field in rule and not isinstance(
+                rule[boolean_field],
+                bool,
+            ):
+                raise ValueError(
+                    f"{boolean_field} for column '{column_name}' "
+                    "must be true or false."
+                )
+
+        if "type" in rule:
+            expected_type = str(rule["type"]).strip().lower()
+
+            if expected_type not in allowed_types:
+                raise ValueError(
+                    f"Unsupported type '{rule['type']}' for column "
+                    f"'{column_name}'. Supported types: "
+                    f"{', '.join(sorted(allowed_types))}."
+                )
+
+            rule["type"] = expected_type
+
+        if "severity" in rule:
+            severity = str(rule["severity"]).strip().upper()
+
+            if severity not in allowed_severities:
+                raise ValueError(
+                    f"Invalid severity '{rule['severity']}' for column "
+                    f"'{column_name}'. Supported severities: "
+                    f"{', '.join(sorted(allowed_severities))}."
+                )
+
+            rule["severity"] = severity
+
+        if "min" in rule:
+            validate_numeric_value(
+                rule["min"],
+                "Minimum",
+                column_name,
+            )
+
+        if "max" in rule:
+            validate_numeric_value(
+                rule["max"],
+                "Maximum",
+                column_name,
+            )
+
+        if "min" in rule and "max" in rule:
+            if rule["min"] > rule["max"]:
+                raise ValueError(
+                    f"Minimum cannot be greater than maximum "
+                    f"for column '{column_name}'."
+                )
+
+        if "allowed_values" in rule:
+            if not isinstance(rule["allowed_values"], list):
+                raise ValueError(
+                    f"allowed_values for column '{column_name}' "
+                    "must be a list."
+                )
+
+            for value in rule["allowed_values"]:
+                if not isinstance(value, (str, int, float, bool)) and value is not None:
+                    raise ValueError(
+                        f"allowed_values for column '{column_name}' "
+                        "must contain only scalar values."
+                    )
+
+        if ("min" in rule or "max" in rule):
+            numeric_types = {"integer", "decimal", "float", "number"}
+
+            if rule.get("type") not in numeric_types:
+                raise ValueError(
+                    f"Range rules for column '{column_name}' "
+                    "require a numeric type."
+                )
+
+    for key in primary_key if isinstance(primary_key, list) else [primary_key]:
+        if key not in columns:
+            raise ValueError(
+                f"Primary key column '{key}' is not defined in columns."
+            )
+
+    parsed_rules["dataset"] = dataset
+    parsed_rules["dataset"]["primary_key"] = primary_key
+
+    return json.dumps(
+        parsed_rules,
+        indent=4,
+        ensure_ascii=False,
+    )

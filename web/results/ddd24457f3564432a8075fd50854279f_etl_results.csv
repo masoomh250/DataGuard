@@ -1,9 +1,0 @@
-﻿status,check,details
-FAIL,Row Count Comparison,"Source: 10, Target: 9, Difference: -1"
-PASS,Column Structure Comparison,Column names and order match
-PASS,Data Type Comparison,All common column data types match
-PASS,Null Percentage Comparison,Null percentages match
-FAIL,Primary Key Comparison,Missing in target: 1; Extra in target: 0
-FAIL,Record Presence Comparison,1 record presence issue(s) found
-FAIL,Record Value Comparison,1 field mismatch(es) found
-FAIL,Hash Comparison,1 record hash mismatch(es) found

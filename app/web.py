@@ -17,6 +17,8 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
+from app.rules import validate_rule_configuration
+
 from app.database import (
     authenticate_user,
     claim_orphan_projects,
@@ -559,7 +561,7 @@ def send_workspace_invitation_email(
     </div>
     """
     if EMAIL_PROVIDER != "resend":
-        raise RuntimeError(f"Unsupported email provider: {EMAIL_PROVIDER or 'none'}. v1.9 supports resend.")
+        raise RuntimeError(f"Unsupported email provider: {EMAIL_PROVIDER or 'none'}. DataGuard supports Resend.")
     send_resend_email(recipient, subject, html_body)
     return invite_url
 
@@ -708,7 +710,7 @@ pre {{ white-space:pre-wrap; word-break:break-word; background:#0f172a; color:#e
       <div class="logo-mark">D</div>
       <div class="logo">DataGuard</div>
     </div>
-    <div class="badge">v1.9 SaaS</div>
+    <div class="badge">v2.0</div>
   </div>
   <nav class="nav">{nav_html}</nav>
   {body}
@@ -903,7 +905,7 @@ async def workspace_page(request: Request):
 
       <div class="card full">
         <h2>Invite Team Member</h2>
-        <p class="card-subtitle">Invitations are valid for 7 days. v1.9 sends a secure invitation link by email through Resend.</p>
+        <p class="card-subtitle">Invitations are valid for 7 days. DataGuard sends a secure invitation link by email through Resend.</p>
         {('<form action="/workspace/invite" method="post"><label>Email</label><input type="email" name="email" placeholder="teammate@company.com" required><label>Role</label><select name="role"><option value="MEMBER">Member</option><option value="ADMIN">Admin</option></select><button type="submit" style="margin-top:18px">Create Invitation</button></form>' if can_manage else '<div class="notice">Only Workspace Owners and Admins can invite team members.</div>')}
       </div>
 
@@ -1209,9 +1211,11 @@ async def project_settings_page(request: Request, project_id: int):
     user = get_current_user(request)
     if user is None:
         return auth_redirect()
+
     owner_id = int(user["id"])
     workspace = get_active_workspace(request, user)
     workspace_id = int(workspace["id"]) if workspace else None
+
     project = get_project(project_id, owner_id, workspace_id=workspace_id)
     if project is None:
         return page(
@@ -1224,6 +1228,44 @@ async def project_settings_page(request: Request, project_id: int):
 
     can_edit = can_manage_projects(request, user)
 
+    try:
+        rules_data = json.loads(project["rules_json"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        rules_data = {}
+
+    if not isinstance(rules_data, dict):
+        rules_data = {}
+
+    dataset_rules = rules_data.get("dataset", {})
+    if not isinstance(dataset_rules, dict):
+        dataset_rules = {}
+
+    column_rules = rules_data.get("columns", {})
+    if not isinstance(column_rules, dict):
+        column_rules = {}
+
+    primary_key = dataset_rules.get(
+        "primary_key",
+        project["default_primary_key"] or "customer_id",
+    )
+
+    if isinstance(primary_key, list):
+        primary_key = primary_key[0] if primary_key else (
+            project["default_primary_key"] or "customer_id"
+        )
+
+    duplicate_rows = dataset_rules.get("check_duplicate_rows", True)
+
+    def js_json(value):
+        return json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
+
+    initial_rules_json = js_json(
+        {
+            "dataset": dataset_rules,
+            "columns": column_rules,
+        }
+    )
+
     if can_edit:
         body = f"""
         <div class="hero">
@@ -1232,7 +1274,8 @@ async def project_settings_page(request: Request, project_id: int):
         </div>
 
         <div class="card">
-          <form action="/projects/{project_id}/update" method="post">
+          <form id="project-settings-form" action="/projects/{project_id}/update" method="post">
+
             <label>Project Name</label>
             <input type="text" name="name" value="{esc(project["name"])}" required>
 
@@ -1240,12 +1283,70 @@ async def project_settings_page(request: Request, project_id: int):
             <input type="text" name="description" value="{esc(project["description"] or "")}">
 
             <label>Default Primary Key</label>
-            <input type="text" name="default_primary_key" value="{esc(project["default_primary_key"] or "customer_id")}" required>
-            <div class="help">Used automatically by ETL Validation unless you enter an override on the dashboard.</div>
+            <input type="text"
+                   name="default_primary_key"
+                   value="{esc(project["default_primary_key"] or "customer_id")}"
+                   required>
+            <div class="help">
+              Used automatically by ETL Validation unless you enter an override on the dashboard.
+            </div>
 
-            <label>Data Quality Rules JSON</label>
-            <textarea name="rules_json" rows="24" style="width:100%;font-family:monospace;resize:vertical">{esc(project["rules_json"] or "{}")}</textarea>
-            <div class="help">Edit the project's required fields, unique checks, types, ranges, allowed values, and other supported rules.</div>
+            <div class="rule-builder">
+              <div class="rule-builder-header">
+                <div>
+                  <h2>Data Quality Rules</h2>
+                  <p class="help">
+                    Configure validation rules visually. DataGuard will generate the
+                    existing rules JSON automatically.
+                  </p>
+                </div>
+              </div>
+
+              <div class="rule-section">
+                <h3>Dataset Rules</h3>
+
+                <div class="rule-option">
+                  <label class="checkbox-row">
+                    <input type="checkbox"
+                           id="check_duplicate_rows"
+                           {"checked" if duplicate_rows else ""}>
+                    <span>Check duplicate rows</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="rule-section">
+                <div class="section-heading-row">
+                  <h3>Column Rules</h3>
+                  <button type="button"
+                          class="button secondary small-button"
+                          onclick="addRuleColumn()">
+                    + Add Column Rule
+                  </button>
+                </div>
+
+                <div id="rule-columns"></div>
+
+                <div id="no-rules-message" class="empty-rule-message">
+                  No column rules configured. Click <strong>+ Add Column Rule</strong>
+                  to add one.
+                </div>
+              </div>
+
+              <details class="advanced-rules">
+                <summary>Advanced JSON</summary>
+                <p class="help">
+                  This is the exact configuration that will be saved. You can use it
+                  when a rule is not yet exposed by the visual builder.
+                </p>
+                <textarea id="advanced_rules_json"
+                          rows="18"
+                          style="width:100%;font-family:monospace;resize:vertical"></textarea>
+              </details>
+
+              <input type="hidden" name="rules_json" id="rules_json">
+
+            </div>
 
             <div class="action-row" style="margin-top:18px">
               <button type="submit">Save Project Settings</button>
@@ -1254,6 +1355,621 @@ async def project_settings_page(request: Request, project_id: int):
             </div>
           </form>
         </div>
+
+        <style>
+          .rule-builder {{
+            margin-top: 28px;
+          }}
+
+          .rule-builder-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 20px;
+          }}
+
+          .rule-section {{
+            margin-top: 24px;
+            padding: 20px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            background: #fafafa;
+          }}
+
+          .rule-section h3 {{
+            margin-top: 0;
+            margin-bottom: 16px;
+          }}
+
+          .section-heading-row {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+          }}
+
+          .small-button {{
+            padding: 8px 12px;
+            font-size: 13px;
+          }}
+
+          .rule-option {{
+            padding: 12px 14px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+          }}
+
+          .checkbox-row {{
+            display: flex !important;
+            align-items: center;
+            gap: 9px;
+            margin: 0 !important;
+            cursor: pointer;
+          }}
+
+          .checkbox-row input {{
+            width: auto !important;
+            margin: 0;
+          }}
+
+          .rule-card {{
+            background: white;
+            border: 1px solid #dfe3e8;
+            border-radius: 12px;
+            padding: 18px;
+            margin-top: 14px;
+          }}
+
+          .rule-card-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+          }}
+
+          .rule-card-header strong {{
+            font-size: 16px;
+          }}
+
+          .remove-rule {{
+            border: 0;
+            background: transparent;
+            color: #b42318;
+            cursor: pointer;
+            font-size: 13px;
+          }}
+
+          .rule-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+          }}
+
+          .rule-checks {{
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+          }}
+
+          .rule-field {{
+            display: flex;
+            flex-direction: column;
+          }}
+
+          .rule-field label {{
+            margin-bottom: 6px;
+          }}
+
+          .allowed-values {{
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid #eee;
+          }}
+
+          .allowed-value-row {{
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+          }}
+
+          .allowed-value-row input {{
+            flex: 1;
+          }}
+
+          .empty-rule-message {{
+            padding: 18px;
+            text-align: center;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
+            margin-top: 14px;
+            color: #64748b;
+            background: white;
+          }}
+
+          .advanced-rules {{
+            margin-top: 24px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 14px 16px;
+            background: white;
+          }}
+
+          .advanced-rules summary {{
+            cursor: pointer;
+            font-weight: 600;
+          }}
+
+          @media (max-width: 700px) {{
+            .rule-grid {{
+              grid-template-columns: 1fr;
+            }}
+
+            .section-heading-row {{
+              align-items: flex-start;
+              flex-direction: column;
+            }}
+          }}
+        </style>
+
+        <script>
+          const initialRules = {initial_rules_json};
+
+          function escapeHtml(value) {{
+            return String(value ?? "")
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#039;");
+          }}
+
+          function addRuleColumn(columnName = "", rule = {{}}) {{
+            const container = document.getElementById("rule-columns");
+            const emptyMessage = document.getElementById("no-rules-message");
+
+            const card = document.createElement("div");
+            card.className = "rule-card";
+
+            const uniqueId = "rule_" + Date.now() + "_" +
+              Math.random().toString(36).slice(2);
+
+            card.dataset.ruleId = uniqueId;
+
+            const allowedValues = Array.isArray(rule.allowed_values)
+              ? rule.allowed_values
+              : [];
+
+            const severity = String(rule.severity || "MEDIUM").toUpperCase();
+            const type = String(rule.type || "").toLowerCase();
+
+            card.innerHTML = `
+              <div class="rule-card-header">
+                <strong>Column Rule</strong>
+                <button type="button"
+                        class="remove-rule"
+                        onclick="removeRuleColumn(this)">
+                  Remove
+                </button>
+              </div>
+
+              <div class="rule-field">
+                <label>Column Name</label>
+                <input type="text"
+                       class="rule-column-name"
+                       value="${{escapeHtml(columnName)}}"
+                       placeholder="e.g. email">
+              </div>
+
+              <div class="rule-checks" style="margin-top:14px">
+                <label class="checkbox-row">
+                  <input type="checkbox"
+                         class="rule-required"
+                         ${{rule.required ? "checked" : ""}}>
+                  <span>Required</span>
+                </label>
+
+                <label class="checkbox-row">
+                  <input type="checkbox"
+                         class="rule-unique"
+                         ${{rule.unique ? "checked" : ""}}>
+                  <span>Unique</span>
+                </label>
+              </div>
+
+              <div class="rule-grid">
+                <div class="rule-field">
+                  <label>Data Type</label>
+                  <select class="rule-type">
+                    <option value="" ${{type === "" ? "selected" : ""}}>No type check</option>
+                    <option value="string" ${{type === "string" ? "selected" : ""}}>String</option>
+                    <option value="integer" ${{type === "integer" ? "selected" : ""}}>Integer</option>
+                    <option value="decimal" ${{type === "decimal" ? "selected" : ""}}>Decimal</option>
+                    <option value="email" ${{type === "email" ? "selected" : ""}}>Email</option>
+                    <option value="date" ${{type === "date" ? "selected" : ""}}>Date</option>
+                  </select>
+                </div>
+
+                <div class="rule-field">
+                  <label>Severity</label>
+                  <select class="rule-severity">
+                    <option value="LOW" ${{severity === "LOW" ? "selected" : ""}}>Low</option>
+                    <option value="MEDIUM" ${{severity === "MEDIUM" ? "selected" : ""}}>Medium</option>
+                    <option value="HIGH" ${{severity === "HIGH" ? "selected" : ""}}>High</option>
+                    <option value="CRITICAL" ${{severity === "CRITICAL" ? "selected" : ""}}>Critical</option>
+                  </select>
+                </div>
+
+                <div class="rule-field">
+                  <label>Minimum</label>
+                  <input type="text"
+                         class="rule-min"
+                         value="${{escapeHtml(rule.min ?? "")}}"
+                         placeholder="Optional">
+                </div>
+
+                <div class="rule-field">
+                  <label>Maximum</label>
+                  <input type="text"
+                         class="rule-max"
+                         value="${{escapeHtml(rule.max ?? "")}}"
+                         placeholder="Optional">
+                </div>
+              </div>
+
+              <div class="allowed-values">
+                <label>Allowed Values</label>
+                <div class="allowed-values-list"></div>
+                <button type="button"
+                        class="button secondary small-button"
+                        style="margin-top:10px"
+                        onclick="addAllowedValue(this)">
+                  + Add Value
+                </button>
+              </div>
+            `;
+
+            container.appendChild(card);
+            emptyMessage.style.display = "none";
+
+            const valuesContainer = card.querySelector(".allowed-values-list");
+
+            allowedValues.forEach(value => {{
+              addAllowedValue(
+                card.querySelector(".allowed-values button"),
+                value
+              );
+            }});
+
+            toggleAdvancedFromBuilder();
+          }}
+
+          function removeRuleColumn(button) {{
+            const card = button.closest(".rule-card");
+            if (card) {{
+              card.remove();
+            }}
+
+            const container = document.getElementById("rule-columns");
+            const emptyMessage = document.getElementById("no-rules-message");
+
+            emptyMessage.style.display =
+              container.querySelector(".rule-card") ? "none" : "block";
+
+            toggleAdvancedFromBuilder();
+          }}
+
+          function addAllowedValue(button, value = "") {{
+            const card = button.closest(".rule-card");
+            const list = card.querySelector(".allowed-values-list");
+
+            const row = document.createElement("div");
+            row.className = "allowed-value-row";
+
+            row.innerHTML = `
+              <input type="text"
+                     class="allowed-value"
+                     value="${{escapeHtml(value)}}"
+                     placeholder="Allowed value">
+              <button type="button"
+                      class="remove-rule"
+                      onclick="this.parentElement.remove()">
+                Remove
+              </button>
+            `;
+
+            list.appendChild(row);
+          }}
+
+          function parseOptionalNumber(value) {{
+            const trimmed = String(value ?? "").trim();
+
+            if (!trimmed) {{
+              return null;
+            }}
+
+            const numberValue = Number(trimmed);
+
+            if (!Number.isFinite(numberValue)) {{
+              throw new Error(
+                `Minimum/Maximum must be numeric when supplied.`
+              );
+            }}
+
+            return Number.isInteger(numberValue)
+              ? numberValue
+              : numberValue;
+          }}
+
+          function buildRulesJson() {{
+            const columns = {{}};
+
+            document.querySelectorAll("#rule-columns .rule-card").forEach(card => {{
+              const name = card.querySelector(".rule-column-name").value.trim();
+
+              if (!name) {{
+                throw new Error("Every column rule must have a column name.");
+              }}
+
+              if (columns[name]) {{
+                throw new Error(`Duplicate column rule: ${{name}}`);
+              }}
+
+              const rule = {{}};
+
+              if (card.querySelector(".rule-required").checked) {{
+                rule.required = true;
+              }}
+
+              if (card.querySelector(".rule-unique").checked) {{
+                rule.unique = true;
+              }}
+
+              const type = card.querySelector(".rule-type").value;
+              if (type) {{
+                rule.type = type;
+              }}
+
+              rule.severity =
+                card.querySelector(".rule-severity").value;
+
+              const minimum = parseOptionalNumber(
+                card.querySelector(".rule-min").value
+              );
+
+              const maximum = parseOptionalNumber(
+                card.querySelector(".rule-max").value
+              );
+
+              if (minimum !== null) {{
+                rule.min = minimum;
+              }}
+
+              if (maximum !== null) {{
+                rule.max = maximum;
+              }}
+
+              if (minimum !== null &&
+                  maximum !== null &&
+                  minimum > maximum) {{
+                throw new Error(
+                  `Minimum cannot be greater than maximum for ${{name}}.`
+                );
+              }}
+
+              const allowedValues = [];
+
+              card.querySelectorAll(".allowed-value").forEach(input => {{
+                const value = input.value.trim();
+
+                if (value) {{
+                  allowedValues.push(value);
+                }}
+              }});
+
+              if (allowedValues.length > 0) {{
+                rule.allowed_values = allowedValues;
+              }}
+
+              columns[name] = rule;
+            }});
+
+            const rules = {{
+              dataset: {{
+                primary_key: document
+                  .querySelector('[name="default_primary_key"]')
+                  .value
+                  .trim(),
+                check_duplicate_rows:
+                  document.getElementById("check_duplicate_rows").checked
+              }},
+              columns
+            }};
+
+            return rules;
+          }}
+
+          let advancedJsonDirty = false;
+
+          function refreshAdvancedJson() {{
+            try {{
+              const rules = buildRulesJson();
+
+              document.getElementById("advanced_rules_json").value =
+                JSON.stringify(rules, null, 4);
+
+              document.getElementById("rules_json").value =
+                JSON.stringify(rules);
+
+              advancedJsonDirty = false;
+              return rules;
+            }} catch (error) {{
+              return null;
+            }}
+          }}
+
+          function loadRulesIntoBuilder(rules) {{
+            if (!rules ||
+                typeof rules !== "object" ||
+                !rules.columns ||
+                typeof rules.columns !== "object") {{
+              throw new Error(
+                "Advanced JSON must contain a 'columns' object."
+              );
+            }}
+
+            const container = document.getElementById("rule-columns");
+            const emptyMessage = document.getElementById("no-rules-message");
+
+            container.innerHTML = "";
+
+            const dataset = rules.dataset &&
+                            typeof rules.dataset === "object"
+              ? rules.dataset
+              : {{}};
+
+            const primaryKey = Array.isArray(dataset.primary_key)
+              ? (dataset.primary_key[0] || "")
+              : String(dataset.primary_key || "");
+
+            const primaryKeyInput =
+              document.querySelector('[name="default_primary_key"]');
+
+            if (primaryKeyInput && primaryKey) {{
+              primaryKeyInput.value = primaryKey;
+            }}
+
+            const duplicateRows =
+              document.getElementById("check_duplicate_rows");
+
+            if (duplicateRows) {{
+              duplicateRows.checked =
+                dataset.check_duplicate_rows !== false;
+            }}
+
+            Object.entries(rules.columns).forEach(([name, rule]) => {{
+              addRuleColumn(name, rule || {{}});
+            }});
+
+            emptyMessage.style.display =
+              Object.keys(rules.columns).length ? "none" : "block";
+
+            document.getElementById("advanced_rules_json").value =
+              JSON.stringify(rules, null, 4);
+
+            document.getElementById("rules_json").value =
+              JSON.stringify(rules);
+
+            advancedJsonDirty = true;
+          }}
+
+          function markBuilderChanged() {{
+            advancedJsonDirty = false;
+            refreshAdvancedJson();
+          }}
+
+          function toggleAdvancedFromBuilder() {{
+            markBuilderChanged();
+          }}
+
+          document
+            .getElementById("project-settings-form")
+            .addEventListener("submit", function(event) {{
+              try {{
+                let rules;
+
+                if (advancedJsonDirty) {{
+                  const advancedText =
+                    document.getElementById("advanced_rules_json").value;
+
+                  rules = JSON.parse(advancedText);
+
+                  if (!rules ||
+                      typeof rules !== "object" ||
+                      !rules.columns ||
+                      typeof rules.columns !== "object") {{
+                    throw new Error(
+                      "Advanced JSON must contain a 'columns' object."
+                    );
+                  }}
+                }} else {{
+                  rules = buildRulesJson();
+                }}
+
+                document.getElementById("rules_json").value =
+                  JSON.stringify(rules);
+
+                document.getElementById("advanced_rules_json").value =
+                  JSON.stringify(rules, null, 4);
+
+              }} catch (error) {{
+                event.preventDefault();
+                alert("Cannot save rules: " + error.message);
+              }}
+            }});
+
+          document
+            .getElementById("advanced_rules_json")
+            .addEventListener("input", function() {{
+              advancedJsonDirty = true;
+            }});
+
+          document
+            .getElementById("advanced_rules_json")
+            .addEventListener("change", function() {{
+              try {{
+                const parsed = JSON.parse(this.value);
+
+                if (!parsed ||
+                    typeof parsed !== "object" ||
+                    !parsed.columns ||
+                    typeof parsed.columns !== "object") {{
+                  throw new Error(
+                    "Advanced JSON must contain a 'columns' object."
+                  );
+                }}
+
+                loadRulesIntoBuilder(parsed);
+
+              }} catch (error) {{
+                alert("Invalid Advanced JSON: " + error.message);
+              }}
+            }});
+
+          document
+            .getElementById("rule-columns")
+            .addEventListener("input", function() {{
+              markBuilderChanged();
+            }});
+
+          document
+            .getElementById("rule-columns")
+            .addEventListener("change", function() {{
+              markBuilderChanged();
+            }});
+
+          document
+            .querySelector('[name="default_primary_key"]')
+            .addEventListener("input", function() {{
+              markBuilderChanged();
+            }});
+
+          document
+            .getElementById("check_duplicate_rows")
+            .addEventListener("change", function() {{
+              markBuilderChanged();
+            }});
+
+          function initializeRuleBuilder() {{
+            loadRulesIntoBuilder(initialRules);
+            advancedJsonDirty = false;
+          }}
+
+          initializeRuleBuilder();
+        </script>
         """
     else:
         body = f"""
@@ -1262,16 +1978,93 @@ async def project_settings_page(request: Request, project_id: int):
           <p>View the validation configuration for <strong>{esc(project["name"])}</strong>.</p>
         </div>
 
-        <div class="notice">Members have read-only access to project configuration. Only Workspace Owners and Admins can modify projects.</div>
+        <div class="notice">
+          Members have read-only access to project configuration.
+          Only Workspace Owners and Admins can modify projects.
+        </div>
 
         <div class="card">
           <h2>{esc(project["name"])}</h2>
-          <p class="card-subtitle">{esc(project["description"] or "No description provided.")}</p>
-          <label>Default Primary Key</label>
-          <input type="text" value="{esc(project["default_primary_key"] or "customer_id")}" readonly>
+          <p class="card-subtitle">
+            {esc(project["description"] or "No description provided.")}
+          </p>
 
-          <label>Data Quality Rules JSON</label>
-          <textarea rows="24" style="width:100%;font-family:monospace;resize:vertical" readonly>{esc(project["rules_json"] or "{}")}</textarea>
+          <label>Default Primary Key</label>
+          <input type="text"
+                 value="{esc(project["default_primary_key"] or "customer_id")}"
+                 readonly>
+
+          <div class="rule-section">
+            <h3>Data Quality Rules</h3>
+
+            <p>
+              <strong>Primary Key:</strong>
+              {esc(primary_key)}
+            </p>
+
+            <p>
+              <strong>Duplicate Row Check:</strong>
+              {"Enabled" if duplicate_rows else "Disabled"}
+            </p>
+
+            <div id="member-rule-list">
+    """
+
+        if column_rules:
+            for column_name, rule in column_rules.items():
+                if not isinstance(rule, dict):
+                    continue
+
+                rule_items = []
+
+                if rule.get("required"):
+                    rule_items.append("Required")
+
+                if rule.get("unique"):
+                    rule_items.append("Unique")
+
+                if rule.get("type"):
+                    rule_items.append(f"Type: {esc(rule['type'])}")
+
+                if "min" in rule:
+                    rule_items.append(f"Min: {esc(rule['min'])}")
+
+                if "max" in rule:
+                    rule_items.append(f"Max: {esc(rule['max'])}")
+
+                if "allowed_values" in rule:
+                    values = ", ".join(
+                        esc(value)
+                        for value in rule.get("allowed_values", [])
+                    )
+                    rule_items.append(f"Allowed: {values}")
+
+                if rule.get("severity"):
+                    rule_items.append(
+                        f"Severity: {esc(str(rule['severity']).upper())}"
+                    )
+
+                body += f"""
+                <div class="rule-card">
+                  <div class="rule-card-header">
+                    <strong>{esc(column_name)}</strong>
+                  </div>
+                  <div class="help">
+                    {" | ".join(rule_items) if rule_items else "No rules configured"}
+                  </div>
+                </div>
+                """
+
+        body += f"""
+            </div>
+          </div>
+
+          <details class="advanced-rules">
+            <summary>View Saved JSON</summary>
+            <textarea rows="18"
+                      style="width:100%;font-family:monospace;resize:vertical"
+                      readonly>{esc(project["rules_json"] or "{}")}</textarea>
+          </details>
 
           <div class="action-row" style="margin-top:18px">
             <a class="button secondary" href="/projects">Back to Projects</a>
@@ -1279,6 +2072,7 @@ async def project_settings_page(request: Request, project_id: int):
           </div>
         </div>
         """
+
     return page("Project Settings", body, "Projects", user)
 
 
@@ -1385,12 +2179,10 @@ async def update_project_route(
         return page("Project Error", '<div class="notice error"><strong>Default primary key is required.</strong></div><a class="button" href="/projects/%d">Back to Settings</a>' % project_id, "Projects", user)
 
     try:
-        parsed_rules = json.loads(rules_json)
-        if not isinstance(parsed_rules, dict):
-            raise ValueError("Rules JSON must contain a JSON object.")
-        if "columns" not in parsed_rules or not isinstance(parsed_rules["columns"], dict):
-            raise ValueError("Rules JSON must contain a 'columns' object.")
-        normalized_rules = json.dumps(parsed_rules, indent=4, ensure_ascii=False)
+        normalized_rules = validate_rule_configuration(
+            rules_json,
+            cleaned_key,
+        )
 
         update_project(
             project_id=project_id,

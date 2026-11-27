@@ -13,3 +13,5 @@ backups/
 .env.*
 
 data/*.db
+
+web/results/
