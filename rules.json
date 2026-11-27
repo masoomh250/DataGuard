@@ -1,0 +1,42 @@
+{
+  "dataset": {
+    "primary_key": ["customer_id"],
+    "check_duplicate_rows": true,
+    "severity": "HIGH"
+  },
+  "columns": {
+    "customer_id": {
+      "required": true,
+      "unique": true,
+      "type": "integer",
+      "severity": "CRITICAL"
+    },
+    "name": {
+      "required": true,
+      "type": "string",
+      "severity": "MEDIUM"
+    },
+    "email": {
+      "required": true,
+      "type": "email",
+      "severity": "HIGH"
+    },
+    "age": {
+      "required": true,
+      "type": "integer",
+      "min": 18,
+      "max": 100,
+      "severity": "MEDIUM"
+    },
+    "city": {
+      "required": true,
+      "type": "string",
+      "severity": "LOW"
+    },
+    "status": {
+      "required": true,
+      "allowed_values": ["ACTIVE", "INACTIVE", "SUSPENDED"],
+      "severity": "MEDIUM"
+    }
+  }
+}

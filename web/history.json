@@ -1,0 +1,29 @@
+[
+  {
+    "run_id": "18b78370f9c14b60a801f3afefd62835",
+    "timestamp": "2026-11-25 14:28:08",
+    "type": "ETL Validation",
+    "dataset": "source_customers.csv → target_customers.csv",
+    "score": 29.17,
+    "status": "FAIL",
+    "passed": 3,
+    "failed": 5,
+    "warnings": 0,
+    "report": "web_38b2d778d713491c86f6fcaa518f2b64_etl.html",
+    "csv": "18b78370f9c14b60a801f3afefd62835_etl_results.csv",
+    "primary_key": "customer_id"
+  },
+  {
+    "run_id": "376aa27f30994add91f00ab6b075e542",
+    "timestamp": "2026-11-25 14:27:39",
+    "type": "Data Quality",
+    "dataset": "customers.csv",
+    "score": 54.05,
+    "status": "FAIL",
+    "passed": 9,
+    "failed": 6,
+    "warnings": 0,
+    "report": "web_b3917d505fa64821a47a680dcb9347ea_quality.html",
+    "csv": "376aa27f30994add91f00ab6b075e542_quality_results.csv"
+  }
+]

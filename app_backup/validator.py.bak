@@ -1,0 +1,75 @@
+import pandas as pd
+
+from .rules import (
+    check_nulls,
+    check_duplicate_rows,
+    check_duplicate_primary_key,
+    check_email_format,
+    check_allowed_values,
+)
+
+
+def run_validation(df: pd.DataFrame) -> list:
+    """Run all configured data quality checks."""
+
+    results = []
+
+    results.append(
+        check_nulls(df)
+    )
+
+    results.append(
+        check_duplicate_rows(df)
+    )
+
+    results.append(
+        check_duplicate_primary_key(
+            df,
+            "customer_id",
+        )
+    )
+
+    results.append(
+        check_email_format(
+            df,
+            "email",
+        )
+    )
+
+    results.append(
+        check_allowed_values(
+            df,
+            "status",
+            [
+                "ACTIVE",
+                "INACTIVE",
+                "SUSPENDED",
+            ],
+        )
+    )
+
+    return results
+
+
+def calculate_quality_score(results: list) -> float:
+    """Calculate overall quality score."""
+
+    applicable_checks = [
+        result
+        for result in results
+        if result["status"] != "SKIP"
+    ]
+
+    if not applicable_checks:
+        return 0.0
+
+    passed = sum(
+        result["status"] == "PASS"
+        for result in applicable_checks
+    )
+
+    score = (
+        passed / len(applicable_checks)
+    ) * 100
+
+    return round(score, 2)

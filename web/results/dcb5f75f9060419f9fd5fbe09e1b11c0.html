@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data Quality Result | DataGuard</title>
+<style>
+:root {
+  --bg:#f4f7fb; --card:#ffffff; --text:#172033; --muted:#667085;
+  --border:#e4e7ec; --primary:#2563eb; --primary-dark:#1d4ed8;
+  --success:#087443; --success-bg:#ecfdf3; --danger:#b42318;
+  --danger-bg:#fef3f2; --warning:#b54708; --warning-bg:#fffaeb;
+  --shadow:0 8px 24px rgba(16,24,40,.06);
+}
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { margin:0; font-family:Inter,Segoe UI,Arial,sans-serif; background:var(--bg); color:var(--text); }
+a { color:inherit; }
+.container { max-width:1180px; margin:0 auto; padding:28px 20px 64px; }
+.header { display:flex; justify-content:space-between; align-items:center; gap:20px; margin-bottom:22px; }
+.brand { display:flex; align-items:center; gap:11px; }
+.logo { font-size:29px; font-weight:850; letter-spacing:-.8px; }
+.logo-mark { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; color:white; background:linear-gradient(135deg,#2563eb,#7c3aed); font-weight:900; }
+.badge { background:#eaf1ff; color:var(--primary); padding:7px 12px; border-radius:999px; font-size:13px; font-weight:750; }
+.nav { display:flex; gap:6px; padding:6px; border:1px solid var(--border); background:#fff; border-radius:12px; margin-bottom:30px; box-shadow:0 2px 8px rgba(16,24,40,.03); }
+.nav-spacer { flex:1; }
+.nav-user { color:var(--muted); font-size:13px; font-weight:700; padding:0 8px; white-space:nowrap; }
+.nav-logout { margin:0; }
+.link-button { border:0; background:transparent; color:var(--primary); font-weight:750; cursor:pointer; padding:10px 8px; font-size:14px; }
+.auth-card { max-width:520px; margin:60px auto 0; }
+.auth-meta { color:var(--muted); font-size:14px; margin-top:8px; }
+.nav-link { text-decoration:none; padding:10px 14px; border-radius:8px; color:var(--muted); font-weight:700; font-size:14px; }
+.nav-link:hover,.nav-link.active { background:#eef4ff; color:var(--primary); }
+.hero { margin:8px 0 28px; }
+.hero h1 { font-size:40px; line-height:1.1; margin:0 0 9px; letter-spacing:-1px; }
+.hero p { color:var(--muted); font-size:17px; margin:0; max-width:780px; }
+.section-title { display:flex; justify-content:space-between; align-items:end; gap:15px; margin:30px 0 14px; }
+.section-title h2 { margin:0; font-size:22px; }
+.section-title p { margin:0; color:var(--muted); font-size:14px; }
+.score-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.score-card { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:23px; text-decoration:none; box-shadow:var(--shadow); }
+.score-card-top { display:flex; justify-content:space-between; color:var(--muted); font-weight:750; }
+.mini-arrow { color:var(--primary); font-size:20px; }
+.score { font-size:42px; font-weight:850; letter-spacing:-1px; margin:12px 0 2px; }
+.score-state { display:inline-block; font-size:12px; font-weight:850; border-radius:999px; padding:5px 9px; }
+.score-state.pass { background:var(--success-bg); color:var(--success); }
+.score-state.fail { background:var(--danger-bg); color:var(--danger); }
+.mini-stats { display:flex; gap:18px; margin-top:18px; color:var(--muted); font-size:13px; }
+.mini-stats strong { color:var(--text); }
+.grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:24px; box-shadow:var(--shadow); }
+.card h2 { margin:0 0 7px; font-size:20px; }
+.card-subtitle { color:var(--muted); margin:0 0 18px; font-size:14px; }
+.full { grid-column:1/-1; }
+label { display:block; font-weight:750; margin:14px 0 7px; }
+input[type=file], input[type=text], input[type=email], input[readonly], select { width:100%; padding:12px; border:1px solid #cfd4dc; border-radius:9px; background:#fff; font:inherit; }
+input:focus,select:focus { outline:3px solid #dbeafe; border-color:#60a5fa; }
+button,.button { display:inline-block; border:0; border-radius:9px; padding:12px 18px; background:var(--primary); color:white; font-weight:750; cursor:pointer; text-decoration:none; font:inherit; }
+button:hover,.button:hover { background:var(--primary-dark); }
+.secondary { background:#eef2f6; color:var(--text); }
+.secondary:hover { background:#e2e8f0; }
+.help { color:var(--muted); font-size:13px; margin-top:6px; line-height:1.5; }
+.notice { padding:14px 16px; border-radius:10px; margin-bottom:18px; background:var(--warning-bg); color:var(--warning); }
+.notice.ok { background:var(--success-bg); color:var(--success); }
+.notice.error { background:var(--danger-bg); color:var(--danger); }
+.result-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:18px 0; }
+.metric { border:1px solid var(--border); border-radius:12px; padding:15px; background:#fbfcfe; }
+.metric .label { color:var(--muted); font-size:12px; font-weight:750; }
+.metric .value { font-size:24px; font-weight:850; margin-top:5px; }
+.results { overflow:auto; border:1px solid var(--border); border-radius:12px; }
+table { width:100%; border-collapse:collapse; min-width:720px; }
+th,td { padding:13px 14px; text-align:left; border-bottom:1px solid var(--border); font-size:14px; vertical-align:top; }
+th { background:#f8fafc; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+tr:last-child td { border-bottom:0; }
+.status { display:inline-block; min-width:52px; text-align:center; padding:4px 8px; border-radius:999px; font-size:11px; font-weight:850; }
+.status.pass { background:var(--success-bg); color:var(--success); }
+.status.fail { background:var(--danger-bg); color:var(--danger); }
+.status.warn { background:var(--warning-bg); color:var(--warning); }
+.row-fail { background:#fff8f7; }
+.row-pass { background:#fbfffd; }
+pre { white-space:pre-wrap; word-break:break-word; background:#0f172a; color:#e5e7eb; border-radius:12px; padding:18px; overflow:auto; line-height:1.5; font-size:13px; }
+.footer { margin-top:38px; color:var(--muted); text-align:center; font-size:13px; }
+.empty { padding:26px; text-align:center; color:var(--muted); border:1px dashed var(--border); border-radius:12px; }
+.small-link { color:var(--primary); font-weight:750; text-decoration:none; }
+.small-link:hover { text-decoration:underline; }
+.dashboard-stats { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; margin-bottom:20px; }
+.dashboard-stat { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; box-shadow:var(--shadow); }
+.dashboard-stat .number { font-size:28px; font-weight:850; margin-top:4px; }
+.dashboard-stat .label { color:var(--muted); font-size:12px; font-weight:750; }
+.action-row { display:flex; flex-wrap:wrap; gap:9px; margin-top:18px; }
+.project-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.project-card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:20px; box-shadow:var(--shadow); }
+.project-card h3 { margin:0 0 7px; }
+.project-card p { color:var(--muted); min-height:42px; }
+@media(max-width:900px) {
+  .dashboard-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .project-grid { grid-template-columns:1fr 1fr; }
+}
+@media(max-width:800px) {
+  .score-grid,.grid { grid-template-columns:1fr; }
+  .full { grid-column:auto; }
+  .result-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .dashboard-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .nav { overflow:auto; }
+  .hero h1 { font-size:32px; }
+}
+@media(max-width:500px) {
+  .container { padding:20px 14px 45px; }
+  .header { align-items:flex-start; }
+  .mini-stats { flex-wrap:wrap; gap:8px 14px; }
+  .project-grid { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="brand">
+      <div class="logo-mark">D</div>
+      <div class="logo">DataGuard</div>
+    </div>
+    <div class="badge">v1.9 SaaS</div>
+  </div>
+  <nav class="nav"><a class="nav-link " href="/">Dashboard</a><a class="nav-link " href="/projects">Projects</a><a class="nav-link active" href="/#quality">Data Quality</a><a class="nav-link " href="/#etl">ETL Validation</a><a class="nav-link " href="/workspace">Workspace</a><span class="nav-spacer"></span><span class="nav-user">hassan.masoom001@gmail.com</span><form action="/logout" method="post" class="nav-logout"><button type="submit" class="link-button">Sign out</button></form></nav>
+  
+        <div class="hero">
+          <h1>Data Quality Result</h1>
+          <p>Project: <strong>Member Test Project Updated</strong> | Dataset: customers.csv</p>
+        </div>
+
+        <div class="notice error">
+          <strong>Validation completed with failures</strong>
+        </div>
+
+        <div class="result-summary">
+          <div class="metric"><div class="label">Quality Score</div><div class="value">58.82%</div></div>
+          <div class="metric"><div class="label">Total Checks</div><div class="value">14</div></div>
+          <div class="metric"><div class="label">Passed</div><div class="value" style="color:var(--success)">9</div></div>
+          <div class="metric"><div class="label">Failed</div><div class="value" style="color:var(--danger)">5</div></div>
+        </div>
+
+        <div class="card">
+          <h2>Validation Results</h2>
+          <p class="card-subtitle">Structured results from the DataGuard quality engine.</p>
+          
+    <div class="results">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Check</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Required Check</strong></td>
+              <td>customer_id: No null values found</td>
+            </tr>
+            
+            <tr class="row-fail">
+              <td><span class="status fail">FAIL</span></td>
+              <td><strong>Unique Check</strong></td>
+              <td>customer_id: 1 duplicate values found</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Type Check</strong></td>
+              <td>customer_id: All values match type integer</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Required Check</strong></td>
+              <td>name: No null values found</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Type Check</strong></td>
+              <td>name: All values match type string</td>
+            </tr>
+            
+            <tr class="row-fail">
+              <td><span class="status fail">FAIL</span></td>
+              <td><strong>Type Check</strong></td>
+              <td>email: 1 invalid values found for type email</td>
+            </tr>
+            
+            <tr class="row-fail">
+              <td><span class="status fail">FAIL</span></td>
+              <td><strong>Required Check</strong></td>
+              <td>age: 1 null values found</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Type Check</strong></td>
+              <td>age: All values match type integer</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Range Check</strong></td>
+              <td>age: All values are within range</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Required Check</strong></td>
+              <td>city: No null values found</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Type Check</strong></td>
+              <td>city: All values match type string</td>
+            </tr>
+            
+            <tr class="row-pass">
+              <td><span class="status pass">PASS</span></td>
+              <td><strong>Required Check</strong></td>
+              <td>status: No null values found</td>
+            </tr>
+            
+            <tr class="row-fail">
+              <td><span class="status fail">FAIL</span></td>
+              <td><strong>Allowed Values Check</strong></td>
+              <td>status: 1 invalid values found: [&#x27;UNKNOWN&#x27;]</td>
+            </tr>
+            
+            <tr class="row-fail">
+              <td><span class="status fail">FAIL</span></td>
+              <td><strong>Duplicate Row Check</strong></td>
+              <td>1 duplicate rows found</td>
+            </tr>
+            
+        </tbody>
+      </table>
+    </div>
+    
+          <div class="action-row">
+            <a class="button" href="/reports/web_b88bf906f4434bbebbf65c3386256fe7_quality.html" target="_blank">Open HTML Report</a>
+            <a class="button secondary" href="/downloads/dcb5f75f9060419f9fd5fbe09e1b11c0_quality_results.csv">Download Results CSV</a>
+            <a class="button secondary" href="/runs/dcb5f75f9060419f9fd5fbe09e1b11c0">Permalink</a>
+            <a class="button secondary" href="/">Back to Dashboard</a>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <h2>Raw Engine Output</h2>
+          <p class="card-subtitle">Original CLI output retained for troubleshooting.</p>
+          <pre>======================================================================
+DataGuard Data Quality Validation
+======================================================================
+PASS  Required Check: customer_id: No null values found
+FAIL  Unique Check: customer_id: 1 duplicate values found
+PASS  Type Check: customer_id: All values match type integer
+PASS  Required Check: name: No null values found
+PASS  Type Check: name: All values match type string
+FAIL  Type Check: email: 1 invalid values found for type email
+FAIL  Required Check: age: 1 null values found
+PASS  Type Check: age: All values match type integer
+PASS  Range Check: age: All values are within range
+PASS  Required Check: city: No null values found
+PASS  Type Check: city: All values match type string
+PASS  Required Check: status: No null values found
+FAIL  Allowed Values Check: status: 1 invalid values found: [&#x27;UNKNOWN&#x27;]
+FAIL  Duplicate Row Check: 1 duplicate rows found
+
+======================================================================
+DATA QUALITY SCORE: 58.82%
+======================================================================
+Report: C:\Projects\DataGuard\reports\web_b88bf906f4434bbebbf65c3386256fe7_quality.html</pre>
+        </div>
+        
+  <div class="footer">DataGuard | Data Quality & ETL Testing Platform</div>
+</div>
+</body>
+</html>

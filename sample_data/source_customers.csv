@@ -1,0 +1,11 @@
+customer_id,name,email,age,city,status
+1001,Rahul Sharma,rahul@gmail.com,32,Pune,ACTIVE
+1002,Priya Singh,priya@gmail.com,28,Mumbai,ACTIVE
+1003,Amit Kumar,amit@gmail.com,41,Delhi,ACTIVE
+1004,Neha Patel,neha@gmail.com,35,Pune,INACTIVE
+1005,Ravi Verma,ravi@gmail.com,29,Bangalore,ACTIVE
+1006,Anita Das,anita@gmail.com,31,Ranchi,ACTIVE
+1007,Suresh Kumar,suresh@gmail.com,30,Pune,ACTIVE
+1008,Deepak Singh,deepak@gmail.com,45,Mumbai,ACTIVE
+1009,Meena Roy,meena@gmail.com,27,Kolkata,ACTIVE
+1010,Ajay Verma,ajay@gmail.com,34,Ranchi,ACTIVE

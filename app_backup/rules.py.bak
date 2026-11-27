@@ -1,0 +1,106 @@
+import re
+import pandas as pd
+
+
+def check_nulls(df: pd.DataFrame) -> dict:
+    """Check for null values."""
+
+    null_count = int(df.isna().sum().sum())
+
+    return {
+        "name": "Null Check",
+        "status": "PASS" if null_count == 0 else "FAIL",
+        "details": f"{null_count} null values found",
+    }
+
+
+def check_duplicate_rows(df: pd.DataFrame) -> dict:
+    """Check for duplicate rows."""
+
+    duplicate_count = int(df.duplicated().sum())
+
+    return {
+        "name": "Duplicate Row Check",
+        "status": "PASS" if duplicate_count == 0 else "FAIL",
+        "details": f"{duplicate_count} duplicate rows found",
+    }
+
+
+def check_duplicate_primary_key(
+    df: pd.DataFrame,
+    column: str,
+) -> dict:
+    """Check whether a column contains duplicate values."""
+
+    if column not in df.columns:
+        return {
+            "name": f"Primary Key Check: {column}",
+            "status": "SKIP",
+            "details": "Column not found",
+        }
+
+    duplicate_count = int(
+        df[column].duplicated().sum()
+    )
+
+    return {
+        "name": f"Primary Key Check: {column}",
+        "status": "PASS" if duplicate_count == 0 else "FAIL",
+        "details": f"{duplicate_count} duplicate values found",
+    }
+
+
+def check_email_format(
+    df: pd.DataFrame,
+    column: str,
+) -> dict:
+    """Validate email format."""
+
+    if column not in df.columns:
+        return {
+            "name": f"Email Format Check: {column}",
+            "status": "SKIP",
+            "details": "Column not found",
+        }
+
+    pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+    invalid_count = 0
+
+    for value in df[column].dropna():
+        if not re.match(pattern, str(value)):
+            invalid_count += 1
+
+    return {
+        "name": f"Email Format Check: {column}",
+        "status": "PASS" if invalid_count == 0 else "FAIL",
+        "details": f"{invalid_count} invalid email values found",
+    }
+
+
+def check_allowed_values(
+    df: pd.DataFrame,
+    column: str,
+    allowed_values: list,
+) -> dict:
+    """Validate that values belong to an allowed list."""
+
+    if column not in df.columns:
+        return {
+            "name": f"Allowed Values Check: {column}",
+            "status": "SKIP",
+            "details": "Column not found",
+        }
+
+    invalid_values = df[
+        ~df[column].isin(allowed_values)
+        & df[column].notna()
+    ]
+
+    invalid_count = len(invalid_values)
+
+    return {
+        "name": f"Allowed Values Check: {column}",
+        "status": "PASS" if invalid_count == 0 else "FAIL",
+        "details": f"{invalid_count} invalid values found",
+    }

@@ -1,0 +1,37 @@
+{
+    "dataset": {
+        "primary_key": [
+            "customer_id"
+        ]
+    },
+    "columns": {
+        "customer_id": {
+            "required": true,
+            "unique": true,
+            "type": "integer"
+        },
+        "name": {
+            "required": true,
+            "type": "string"
+        },
+
+        "age": {
+            "required": true,
+            "type": "integer",
+            "min": 18,
+            "max": 100
+        },
+        "city": {
+            "required": true,
+            "type": "string"
+        },
+        "status": {
+            "required": true,
+            "allowed_values": [
+                "ACTIVE",
+                "INACTIVE",
+                "SUSPENDED"
+            ]
+        }
+    }
+}
